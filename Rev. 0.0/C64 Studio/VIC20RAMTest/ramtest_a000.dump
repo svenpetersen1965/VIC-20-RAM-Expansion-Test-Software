@@ -1,0 +1,1324 @@
+0000   ----              ROM=1           ; this configure the output
+0001   ----              ; as an auto start cartridge
+0002   ----              ; @blk5 ($a000)
+0003   ----              
+0004   ----              ; *********************************************
+0005   ----              ; RAM test for the VIC-20 memory extensions
+0006   ----              ; by Sven Petersen
+0007   ----              ; http://www.github.com/
+0008   ----              ; *********************************************
+0009   ----              ; revision history:
+0010   ----              ; Rev. 0.00: initial release
+0011   ----              ;
+0012   ----              ; assembler used: C64 Studio
+0013   ----              ; *********************************************
+0014   ----              
+0015   ----              
+0016   ----              ; ROM=1           ; options:
+0017   ----              ;          in ROM (auto start cartridge@ $A000)
+0018   ----              ;          in RAM (sys 4864 = $1300)
+0019   ----              !ifdef ROM {
+0020  $A000              *= $A000
+0021  $A000              ; cartridge autostart header
+0022  $A000  09 A0 AD FE 41 30 C3 C2 CD  !BYTE <start, >start, $ad, $fe, $41, $30, $c3, $c2, $cd
+0023  $A009  20 8D FD    start      jsr InitMem  ; initialize memory and system contents;
+0024  $A00C  20 52 FD    jsr Restor   ; set the system vectors
+0025  $A00F  20 F9 FD    jsr InitVIA  ; initialize the 6522 VIA register
+0026  $A012  20 18 E5    jsr InitSK   ; initialize the 6560 VIC chip registers and screen
+0027  $A015  58          cli          ; enable all interrupts
+0028  $A016  4C 24 A4    jmp main
+0029  $A019              } else {
+0030  $A019              RAM=1
+0031  $A019              *= $1300
+0032  $A019              jmp main
+0033  $A019              }
+0034  $A019              
+0035  $A019              ; Basic/Kernal Subroutines
+0036  $A019              clearScreen = $e55f
+0037  $A019              printStr    = $cb1e     ; LSB(StrAdr) -> .A, MSB(StrAdr) -> .Y
+0038  $A019              posCursor   = $fff0     ; clc, row -> .X, column -> .Y
+0039  $A019              PrtFix      = $ddcd     ; prints a fix decimal number (MSB in .A, LSB in .Y)
+0040  $A019              InitMem     = $fd8d     ; Initialize system memory
+0041  $A019              Restor      = $fd52     ; Cause the RAM system vectors to be reset to provided defaults
+0042  $A019              InitVIA     = $fdf9     ; Initialize the 6522 VIA registers
+0043  $A019              InitSK      = $e518     ; Initialize the 6550 VIC chip, screen, and related pointers
+0044  $A019              
+0045  $A019              
+0046  $A019              ; Kernal variables
+0047  $A019              COLOR       = $0286     ; Cursor: original color at this screen location
+0048  $A019              
+0049  $A019              ; used variables
+0050  $A019              CountL      = $3b       ; Count LSB
+0051  $A019              CountH      = $3c       ; Cound MSB
+0052  $A019              Result      = $92       ; RAM Test Result ($00 is good)
+0053  $A019              TestBlk     = $94       ; block to test
+0054  $A019              BlockOk     = $95       ; result flags (1=ok)
+0055  $A019              XLnk        = $96       ; cross linked flag (1=cross linked)
+0056  $A019              BitPattern  = $9b       ; bit pattern for error flags
+0057  $A019              PRN         = $9c       ; storage for pseudo random number
+0058  $A019              StickyBad   = $9e       ; Sticky bad flags
+0059  $A019              StickyXLnk  = $9f       ; Sticky cross link flags
+0060  $A019              index1      = $a3       ; index variable #1
+0061  $A019              RAMfound    = $be       ; flags for found RAM blocks (bit set = found)
+0062  $A019              TestResult  = $bf       ; temporary test result storage
+0063  $A019              RAMPtrL     = $fb       ; pointer to RAM block (LSB)
+0064  $A019              RAMPtrH     = $fc       ; pointer to RAM block (MSB)
+0065  $A019              NumPages    = $fd       ; number of pages
+0066  $A019              RAMfill     = $fe       ; fill value/test value
+0067  $A019              
+0068  $A019              ;===============================================
+0069  $A019              
+0070  $A019              
+0071  $A019              
+0072  $A019              ; Texts
+0073  $A019  56 49 43 2D 32 30 20 52 41 4D 20 45 58 50 41 4E 53 49 4F 4E 00  title      !text "VIC-20 RAM EXPANSION", 0
+0074  $A02E  54 45 53 54 20 56 30 2E 30 00  title1     !text "TEST V0.0",0
+0075  $A038  33 4B 40 30 34 30 30 00  exp3k      !text "3K@0400",0
+0076  $A040  38 4B 40 32 30 30 30 00  expblk1    !text "8K@2000",0
+0077  $A048  38 4B 40 34 30 30 30 00  expblk2    !text "8K@4000",0
+0078  $A050  38 4B 40 36 30 30 30 00  expblk3    !text "8K@6000",0
+0079  $A058              !ifdef RAM {
+0080  $A058              expblk5    !text "8K@A000",0
+0081  $A058              }
+0082  $A058  42 4C 4F 43 4B 20 20 20 46 4E 44 20 54 45 53 54 20 43 52 4F 53 53 00  tabtitle   !text "BLOCK   FND TEST CROSS",0
+0083  $A06F  43 4F 55 4E 54 3A 20 00  counttxt   !text "COUNT: ",0
+0084  $A077  52 45 53 55 4C 54 3A 00  resulttxt  !text "RESULT:",0
+0085  $A07F  4F 4B 20 00  txtok      !text "OK ",0
+0086  $A083  42 41 44 00  txtbad     !text "BAD",0
+0087  $A087  59 45 53 00  txtyes     !text "YES",0
+0088  $A08B  4E 4F 20 00  txtno      !text "NO ",0
+0089  $A08F  52 55 4E 00  txtrun     !text "RUN",0
+0090  $A093  46 4E 44 3A 20 20 20 52 41 4D 20 42 4C 4F 43 4B 20 46 4F 55 4E 44 00  txtleg1    !text "FND:   RAM BLOCK FOUND",0
+0091  $A0AA  43 52 4F 53 53 3A 20 43 52 4F 53 53 20 4C 49 4E 4B 45 44 20 54 4F 00  txtleg2    !text "CROSS: CROSS LINKED TO",0
+0092  $A0C1  20 20 20 20 20 20 20 4F 54 48 45 52 20 52 41 4D 20 42 4C 4F 43 4B 00  txtleg3    !text "       OTHER RAM BLOCK",0
+0093  $A0D8  20 20 20 20 00  txttrail   !text "    ",0
+0094  $A0DD              
+0095  $A0DD              ; table coordinates
+0096  $A0DD              titlerow   =3               ; row of table title
+0097  $A0DD              foundcol   =8               ; column of "FND"
+0098  $A0DD              testcol    =12              ; column of "TEST"
+0099  $A0DD              crosscol   =18              ; column of "CROSS"
+0100  $A0DD              countrow   =11              ; row of "COUNT:"
+0101  $A0DD              countcol   =7               ; column of the count
+0102  $A0DD              resultrow  =12
+0103  $A0DD              ; constants
+0104  $A0DD              colred     =2               ; value of red
+0105  $A0DD              colblue    =6               ; value of blue
+0106  $A0DD              colblk     =0               ; value of black
+0107  $A0DD              
+0108  $A0DD              PRNPoly    =%10001100       ; polynome for pseudo ramndom number generation (X^8 + X^5 + X^4 + 1)
+0109  $A0DD              PRNSeed    =$01             ; seed value for pseudo random numbers
+0110  $A0DD              
+0111  $A0DD              ; ==== Subroutines ====
+0112  $A0DD              
+0113  $A0DD              ; set blue cursor
+0114  $A0DD  A9 06       setBlue    lda #colblue
+0115  $A0DF  8D 86 02    sta COLOR
+0116  $A0E2  60          rts
+0117  $A0E3              
+0118  $A0E3              ; set red cursor
+0119  $A0E3  A9 02       setRed     lda #colred
+0120  $A0E5  8D 86 02    sta COLOR
+0121  $A0E8  60          rts
+0122  $A0E9              
+0123  $A0E9              ; set black cursor
+0124  $A0E9  A9 00       setBlk     lda #colblk
+0125  $A0EB  8D 86 02    sta COLOR
+0126  $A0EE  60          rts
+0127  $A0EF              
+0128  $A0EF              ; ===========================================
+0129  $A0EF              ;           Fill memory area
+0130  $A0EF              ; pointer to memory address in      RAMPtrL/H
+0131  $A0EF              ; number of pages (=256bytes) in    NumPages
+0132  $A0EF              ; content in                        RAMfill
+0133  $A0EF              ; ===========================================
+0134  $A0EF              
+0135  $A0EF  A5 FB       fillMem    lda RAMPtrL              ; save variables to stack
+0136  $A0F1  48          pha
+0137  $A0F2  A5 FC       lda RAMPtrH
+0138  $A0F4  48          pha
+0139  $A0F5  A5 FD       lda NumPages
+0140  $A0F7  48          pha
+0141  $A0F8              
+0142  $A0F8  A5 FE       fillMem1   lda RAMfill              ; content to acc
+0143  $A0FA  A0 00       ldy #$00                 ; reset y (index within page)
+0144  $A0FC  91 FB       fillMem2   sta (RAMPtrL),Y          ; store content indirect, y indexed
+0145  $A0FE  C8          iny                      ; advance page index
+0146  $A0FF  D0 FB       bne fillMem2             ; is zero? no: loop
+0147  $A101  E6 FC       inc RAMPtrH              ; yes: increment memory pointer (MSB)
+0148  $A103  C6 FD       dec NumPages             ; decrement the number of pages to go
+0149  $A105  D0 F1       bne fillMem1             ; loop
+0150  $A107              
+0151  $A107  68          pla                      ; retrieve variables from stack
+0152  $A108  85 FD       sta NumPages
+0153  $A10A  68          pla
+0154  $A10B  85 FC       sta RAMPtrH
+0155  $A10D  68          pla
+0156  $A10E  85 FB       sta RAMPtrL
+0157  $A110  60          rts
+0158  $A111              
+0159  $A111              ; ===========================================
+0160  $A111              ;           test memory area
+0161  $A111              ; pointer to memory address in      RAMPtrL/H
+0162  $A111              ; number of pages (=256bytes) in    NumPages
+0163  $A111              ; content in                        RAMfill
+0164  $A111              ; ===========================================
+0165  $A111              
+0166  $A111  A5 FB       testMem    lda RAMPtrL              ; save variables to stack
+0167  $A113  48          pha
+0168  $A114  A5 FC       lda RAMPtrH
+0169  $A116  48          pha
+0170  $A117  A5 FD       lda NumPages
+0171  $A119  48          pha
+0172  $A11A              
+0173  $A11A  A0 00       ldy #$00                 ; reset y (index within page)
+0174  $A11C  84 BF       sty TestResult           ; reset temp. result
+0175  $A11E              
+0176  $A11E  B1 FB       testMem2   lda (RAMPtrL),Y          ; load byte from memory indirect, y indexed
+0177  $A120  C5 FE       cmp RAMfill              ; compare with RAMfil
+0178  $A122  D0 0C       bne testMemErr           ; if not equal, it is a error
+0179  $A124  C8          iny                      ; advance page index
+0180  $A125  D0 F7       bne testMem2             ; is zero? no: loop
+0181  $A127  E6 FC       inc RAMPtrH              ; yes: increment memory pointer (MSB)
+0182  $A129  C6 FD       dec NumPages             ; decrement the number of pages to go
+0183  $A12B  D0 F1       bne testMem2             ; loop
+0184  $A12D  4C 34 A1    jmp testMem3             ; finished with no error
+0185  $A130              
+0186  $A130  A9 FF       testMemErr lda #$ff                 ; set TestResult to Error
+0187  $A132  85 BF       sta TestResult
+0188  $A134              
+0189  $A134  68          testMem3   pla                      ; retrieve variables from stack
+0190  $A135  85 FD       sta NumPages
+0191  $A137  68          pla
+0192  $A138  85 FC       sta RAMPtrH
+0193  $A13A  68          pla
+0194  $A13B  85 FB       sta RAMPtrL
+0195  $A13D              
+0196  $A13D  60          rts
+0197  $A13E              
+0198  $A13E              ;=============================================
+0199  $A13E              ; fillZero
+0200  $A13E              ; fills all blocks with $00
+0201  $A13E              ;=============================================
+0202  $A13E  A9 00       fillZero   lda #$00                 ; set LSB of RAMPtrH
+0203  $A140  85 FB       sta RAMPtrL
+0204  $A142  85 FE       sta RAMfill              ; set RAMfill = $00
+0205  $A144              
+0206  $A144  A9 01       lda #$01
+0207  $A146  25 BE       and RAMfound
+0208  $A148  F0 0B       beq fillZero1
+0209  $A14A  A9 04       lda #$04                 ; pointer to $0400
+0210  $A14C  85 FC       sta RAMPtrH
+0211  $A14E  A9 0C       lda #12                  ; 3k are 12 pages
+0212  $A150  85 FD       sta NumPages
+0213  $A152  20 EF A0    jsr fillMem
+0214  $A155              
+0215  $A155  A9 20       fillZero1  lda #$20                 ; 8k are 32 pages
+0216  $A157  85 FD       sta NumPages
+0217  $A159              
+0218  $A159  A9 02       lda #$02
+0219  $A15B  25 BE       and RAMfound
+0220  $A15D  F0 07       beq fillZero2
+0221  $A15F              
+0222  $A15F  A9 20       lda #$20                 ; pointer to $2000
+0223  $A161  85 FC       sta RAMPtrH
+0224  $A163  20 EF A0    jsr fillMem
+0225  $A166              
+0226  $A166  A9 04       fillZero2  lda #$04
+0227  $A168  25 BE       and RAMfound
+0228  $A16A  F0 07       beq fillZero3
+0229  $A16C              
+0230  $A16C  A9 40       lda #$40                 ; pointer to $4000
+0231  $A16E  85 FC       sta RAMPtrH
+0232  $A170  20 EF A0    jsr fillMem
+0233  $A173              
+0234  $A173  A9 08       fillZero3  lda #$08
+0235  $A175  25 BE       and RAMfound
+0236  $A177  F0 07       beq fillZero4
+0237  $A179              
+0238  $A179  A9 60       lda #$60                 ; pointer to $6000
+0239  $A17B  85 FC       sta RAMPtrH
+0240  $A17D  20 EF A0    jsr fillMem
+0241  $A180              
+0242  $A180              fillZero4
+0243  $A180              !ifdef RAM {
+0244  $A180              lda #$10
+0245  $A180              and RAMfound
+0246  $A180              beq fillZero5
+0247  $A180              lda #$A0                 ; pointer to $8000
+0248  $A180              sta RAMPtrH
+0249  $A180              jsr fillMem
+0250  $A180              fillZero5
+0251  $A180              }
+0252  $A180  60          rts
+0253  $A181              
+0254  $A181              ;===================================================
+0255  $A181              ; about pseudo random numbers:
+0256  $A181              ; they are actally a fix sequence of numbers, depending
+0257  $A181              ; on the polynome and the seed value. They repeat after
+0258  $A181              ; an odd interval, so they are good to detect address
+0259  $A181              ; signal problems
+0260  $A181              ; https://en.wikipedia.org/wiki/Pseudorandom_number_generator
+0261  $A181              ;===================================================
+0262  $A181              ; nextPRN
+0263  $A181              ; calculates the next pseudo ramdom number
+0264  $A181              ; this works like a CRC calculation:
+0265  $A181              ; https://en.wikipedia.org/wiki/Cyclic_redundancy_check
+0266  $A181              ; polynome like (Polynome: Dallas CRC-8 for 1wire bus)
+0267  $A181              ; do not destroy .x and carry flag
+0268  $A181              ; this pattern repeats after 186 bytes
+0269  $A181              ;===================================================
+0270  $A181  8A          nextPRN    txa                      ; value in .x -> .a
+0271  $A182  6A          ror                      ; rotate right, LSB in carry flag
+0272  $A183  90 02       bcc nextPRN1             ; branch if carry clear
+0273  $A185  49 8C       eor #PRNPoly             ; if carry set, apply polynome
+0274  $A187              ; = invert the bits, that are contained in polynome
+0275  $A187  AA          nextPRN1   tax                      ; save result in .x
+0276  $A188  60          rts
+0277  $A189              
+0278  $A189              ; initialize the PRN generation ====================
+0279  $A189  A2 01       initPRN    ldx #PRNSeed             ; seed value -> .x
+0280  $A18B  18          clc                      ; clear carry
+0281  $A18C  60          rts
+0282  $A18D              
+0283  $A18D              ;===================================================
+0284  $A18D              ; fillPRN
+0285  $A18D              ; fills the memory pointed to in RAMPtrL/RAMPtrH
+0286  $A18D              ; with pseudo random numbers
+0287  $A18D              ; length of the fill (in pages) is in NumPages
+0288  $A18D              ;
+0289  $A18D              ;===================================================
+0290  $A18D  A5 FB       fillPRN    lda RAMPtrL              ; save variables to stack
+0291  $A18F  48          pha
+0292  $A190  A5 FC       lda RAMPtrH
+0293  $A192  48          pha
+0294  $A193  A5 FD       lda NumPages
+0295  $A195  48          pha
+0296  $A196              
+0297  $A196  A0 00       ldy #$00                 ; initialize y
+0298  $A198  20 89 A1    jsr initPRN              ; initialize .x and carry
+0299  $A19B  20 81 A1    fillPRN1   jsr nextPRN              ; calculate next pseudo random number
+0300  $A19E  91 FB       sta (RAMPtrL),Y          ; store it in RAM
+0301  $A1A0  C8          iny                      ; increment the index .y
+0302  $A1A1  D0 F8       bne fillPRN1
+0303  $A1A3  E6 FC       inc RAMPtrH              ; yes: increment memory pointer (MSB)
+0304  $A1A5  C6 FD       dec NumPages             ; decrement the number of pages to go
+0305  $A1A7  D0 F2       bne fillPRN1             ; loop
+0306  $A1A9              
+0307  $A1A9  68          pla                      ; retrieve variables from stack
+0308  $A1AA  85 FD       sta NumPages
+0309  $A1AC  68          pla
+0310  $A1AD  85 FC       sta RAMPtrH
+0311  $A1AF  68          pla
+0312  $A1B0  85 FB       sta RAMPtrL
+0313  $A1B2  60          rts
+0314  $A1B3              
+0315  $A1B3              ;===================================================
+0316  $A1B3              ; testPRN
+0317  $A1B3              ;
+0318  $A1B3              ;===================================================
+0319  $A1B3  A5 FB       testPRN    lda RAMPtrL              ; save variables to stack
+0320  $A1B5  48          pha
+0321  $A1B6  A5 FC       lda RAMPtrH
+0322  $A1B8  48          pha
+0323  $A1B9  A5 FD       lda NumPages
+0324  $A1BB  48          pha
+0325  $A1BC              
+0326  $A1BC  A0 00       ldy #$00                 ; initialize y
+0327  $A1BE  84 BF       sty TestResult           ; initialize TestResult
+0328  $A1C0  20 89 A1    jsr initPRN              ; initialize .x and carry
+0329  $A1C3  20 81 A1    testPRN1   jsr nextPRN              ; calculate next pseudo random number
+0330  $A1C6  08          php                      ; save status register (CMP changed the carry flag)
+0331  $A1C7  D1 FB       cmp (RAMPtrL),Y          ; compare with RAM content
+0332  $A1C9  D0 0D       bne testPRNErr           ; if not equal, it is a error
+0333  $A1CB  28          plp                      ; retrieve the status register
+0334  $A1CC  C8          iny                      ; advance page index
+0335  $A1CD  D0 F4       bne testPRN1             ; is zero? no: loop
+0336  $A1CF  E6 FC       inc RAMPtrH              ; yes: increment memory pointer (MSB)
+0337  $A1D1  C6 FD       dec NumPages             ; decrement the number of pages to go
+0338  $A1D3  D0 EE       bne testPRN1             ; loop
+0339  $A1D5  4C DD A1    jmp testPRN2             ; finished with no error
+0340  $A1D8              
+0341  $A1D8  28          testPRNErr plp                      ; retrieve the status register
+0342  $A1D9  A9 FF       lda #$ff                 ; set TestResult to Error
+0343  $A1DB  85 BF       sta TestResult
+0344  $A1DD              
+0345  $A1DD  68          testPRN2   pla                      ; retrieve variables from stack
+0346  $A1DE  85 FD       sta NumPages
+0347  $A1E0  68          pla
+0348  $A1E1  85 FC       sta RAMPtrH
+0349  $A1E3  68          pla
+0350  $A1E4  85 FB       sta RAMPtrL
+0351  $A1E6  60          rts
+0352  $A1E7              
+0353  $A1E7              ;===================================================
+0354  $A1E7              ; detectBlock
+0355  $A1E7              ; detects, wether a RAM block is present
+0356  $A1E7              ; block number (0..4) in TestBlk
+0357  $A1E7              ; 0: 0400-0fff
+0358  $A1E7              ; 1: 2000-3fff
+0359  $A1E7              ; 2: 4000-5fff
+0360  $A1E7              ; 3: 6000-7fff
+0361  $A1E7              ; 4: a000-bfff (not ROM version)
+0362  $A1E7              ;===================================================
+0363  $A1E7              
+0364  $A1E7              detectBlock
+0365  $A1E7  A9 01       lda #1               ; only one page tested
+0366  $A1E9  85 FD       sta NumPages
+0367  $A1EB              
+0368  $A1EB  A9 00       lda #$00
+0369  $A1ED  85 FB       sta RAMPtrL
+0370  $A1EF              
+0371  $A1EF              ; initialize RAMPtrH and Bit Pattern depending on
+0372  $A1EF              ; the variabkle TestBlk
+0373  $A1EF  C5 94       cmp TestBlk            ; is it block 0
+0374  $A1F1  D0 0B       bne detBlock1
+0375  $A1F3              
+0376  $A1F3              ; 3k€0400
+0377  $A1F3  A9 01       lda #$01
+0378  $A1F5  85 9B       sta BitPattern
+0379  $A1F7  A9 04       lda #$04
+0380  $A1F9  85 FC       sta RAMPtrH
+0381  $A1FB  4C 42 A2    jmp detBlockSt
+0382  $A1FE              
+0383  $A1FE  A9 01       detBlock1  lda #$01
+0384  $A200  C5 94       cmp TestBlk            ; is it block 1
+0385  $A202  D0 0B       bne detBlock2
+0386  $A204              
+0387  $A204              ; 8k@2000
+0388  $A204  A9 02       lda #$02
+0389  $A206  85 9B       sta BitPattern
+0390  $A208  A9 20       lda #$20
+0391  $A20A  85 FC       sta RAMPtrH
+0392  $A20C  4C 42 A2    jmp detBlockSt
+0393  $A20F              
+0394  $A20F  A9 02       detBlock2  lda #$02
+0395  $A211  C5 94       cmp TestBlk            ; is it block 2
+0396  $A213  D0 0B       bne detBlock3
+0397  $A215              
+0398  $A215              ; 8k@4000
+0399  $A215  A9 04       lda #$04
+0400  $A217  85 9B       sta BitPattern
+0401  $A219  A9 40       lda #$40
+0402  $A21B  85 FC       sta RAMPtrH
+0403  $A21D  4C 42 A2    jmp detBlockSt
+0404  $A220              
+0405  $A220  A9 03       detBlock3  lda #$03
+0406  $A222  C5 94       cmp TestBlk            ; is it block 3
+0407  $A224  D0 0B       bne detBlock4
+0408  $A226              
+0409  $A226              ; 8k@6000
+0410  $A226  A9 08       lda #$08
+0411  $A228  85 9B       sta BitPattern
+0412  $A22A  A9 60       lda #$60
+0413  $A22C  85 FC       sta RAMPtrH
+0414  $A22E  4C 42 A2    jmp detBlockSt
+0415  $A231              
+0416  $A231              ; 8k@a000
+0417  $A231  A9 04       detBlock4  lda #$04
+0418  $A233  C5 94       cmp TestBlk            ; is it block 4
+0419  $A235  D0 31       bne detBlockEnd
+0420  $A237              
+0421  $A237  A9 10       lda #$10
+0422  $A239  85 9B       sta BitPattern
+0423  $A23B  A9 A0       lda #$A0
+0424  $A23D  85 FC       sta RAMPtrH
+0425  $A23F  4C 42 A2    jmp detBlockSt
+0426  $A242              
+0427  $A242              ;start the actual test
+0428  $A242              detBlockSt
+0429  $A242  A9 AA       lda #$aa
+0430  $A244  85 FE       sta RAMfill           ; fill with $aa
+0431  $A246  20 EF A0    jsr fillMem
+0432  $A249  20 11 A1    jsr testMem           ; test for $aa
+0433  $A24C  A5 BF       lda TestResult
+0434  $A24E  D0 17       bne detBlockFail      ; TestResult != 0 => RAM not found
+0435  $A250              
+0436  $A250  A9 55       lda #$55
+0437  $A252  85 FE       sta RAMfill           ; fill with $55
+0438  $A254  20 EF A0    jsr fillMem
+0439  $A257  20 11 A1    jsr testMem           ; test for $55
+0440  $A25A  A5 BF       lda TestResult        ; TestResult != 0 => RAM not found
+0441  $A25C  D0 09       bne detBlockFail
+0442  $A25E              
+0443  $A25E              ; detection passed
+0444  $A25E  A5 BE       lda RAMfound          ; mark block in bitset RAMfound
+0445  $A260  05 9B       ora BitPattern        ; 1=present
+0446  $A262  85 BE       sta RAMfound
+0447  $A264  4C 68 A2    jmp detBlockEnd
+0448  $A267              detBlockFail
+0449  $A267  EA          nop
+0450  $A268              
+0451  $A268              detBlockEnd
+0452  $A268  60          rts
+0453  $A269              
+0454  $A269              ;===================================================
+0455  $A269              ; testBlock
+0456  $A269              ; tests a block
+0457  $A269              ; block number (0..4) in TestBlk
+0458  $A269              ; 0: 0400-0fff
+0459  $A269              ; 1: 2000-3fff
+0460  $A269              ; 2: 4000-5fff
+0461  $A269              ; 3: 6000-7fff
+0462  $A269              ; 4: a000-bfff (not ROM version)
+0463  $A269              ;===================================================
+0464  $A269              testBlock  ; setting up the test:
+0465  $A269              ; block address, size and a bit patterns
+0466  $A269              ; depending on the variable TestBlk
+0467  $A269              
+0468  $A269  A9 00       lda #$00
+0469  $A26B  C5 94       cmp TestBlk            ; is it block 0
+0470  $A26D  D0 0F       bne testBlock1
+0471  $A26F              
+0472  $A26F              ; 3k€0400
+0473  $A26F  A9 01       lda #$01
+0474  $A271  85 9B       sta BitPattern
+0475  $A273  A9 0C       lda #12                ; yes
+0476  $A275  85 FD       sta NumPages           ; 12 pages
+0477  $A277  A9 04       lda #$04
+0478  $A279  85 FC       sta RAMPtrH
+0479  $A27B  4C D5 A2    jmp testBlockSt
+0480  $A27E              
+0481  $A27E  A9 01       testBlock1 lda #$01
+0482  $A280  C5 94       cmp TestBlk            ; is it block 1
+0483  $A282  D0 0F       bne testBlock2
+0484  $A284              
+0485  $A284              ; 8k@2000
+0486  $A284  A9 02       lda #$02
+0487  $A286  85 9B       sta BitPattern
+0488  $A288  A9 20       lda #$20               ; yes
+0489  $A28A  85 FD       sta NumPages           ; 32 pages
+0490  $A28C  A9 20       lda #$20
+0491  $A28E  85 FC       sta RAMPtrH
+0492  $A290  4C D5 A2    jmp testBlockSt
+0493  $A293              
+0494  $A293  A9 02       testBlock2 lda #$02
+0495  $A295  C5 94       cmp TestBlk            ; is it block 2
+0496  $A297  D0 0F       bne testBlock3
+0497  $A299              
+0498  $A299              ; 8k@4000
+0499  $A299  A9 04       lda #$04
+0500  $A29B  85 9B       sta BitPattern
+0501  $A29D  A9 20       lda #$20               ; yes
+0502  $A29F  85 FD       sta NumPages           ; 32 pages
+0503  $A2A1  A9 40       lda #$40
+0504  $A2A3  85 FC       sta RAMPtrH
+0505  $A2A5  4C D5 A2    jmp testBlockSt
+0506  $A2A8              
+0507  $A2A8  A9 03       testBlock3 lda #$03
+0508  $A2AA  C5 94       cmp TestBlk            ; is it block 3
+0509  $A2AC  D0 0F       bne testBlock4
+0510  $A2AE              
+0511  $A2AE              ; 8k@6000
+0512  $A2AE  A9 08       lda #$08
+0513  $A2B0  85 9B       sta BitPattern
+0514  $A2B2  A9 20       lda #$20               ; yes
+0515  $A2B4  85 FD       sta NumPages           ; 32 pages
+0516  $A2B6  A9 60       lda #$60
+0517  $A2B8  85 FC       sta RAMPtrH
+0518  $A2BA  4C D5 A2    jmp testBlockSt
+0519  $A2BD              
+0520  $A2BD              ; 8k@a000
+0521  $A2BD  A9 04       testBlock4 lda #$04
+0522  $A2BF  C5 94       cmp TestBlk            ; is it block 4
+0523  $A2C1  D0 0F       bne testBlock5
+0524  $A2C3              
+0525  $A2C3  A9 10       lda #$10
+0526  $A2C5  85 9B       sta BitPattern
+0527  $A2C7  A9 20       lda #$20               ; yes
+0528  $A2C9  85 FD       sta NumPages           ; 32 pages
+0529  $A2CB  A9 A0       lda #$A0
+0530  $A2CD  85 FC       sta RAMPtrH
+0531  $A2CF  4C D5 A2    jmp testBlockSt
+0532  $A2D2              testBlock5
+0533  $A2D2  4C 06 A3    jmp testBlockEnd
+0534  $A2D5              
+0535  $A2D5              ; execute the actual test
+0536  $A2D5  A9 00       testBlockSt lda #$00
+0537  $A2D7  85 FB       sta RAMPtrL           ; initialize RAMPtrL (always $00)
+0538  $A2D9  A9 55       lda #$55
+0539  $A2DB  85 FE       sta RAMfill
+0540  $A2DD  20 EF A0    jsr fillMem           ; fill block with $55
+0541  $A2E0  20 11 A1    jsr testMem           ; test block for all $55
+0542  $A2E3              
+0543  $A2E3  A5 BF       lda TestResult        ; is TestResult = 0? (which means ok)
+0544  $A2E5  D0 1E       bne testBlockErr      ; no? Then it is an error
+0545  $A2E7              
+0546  $A2E7  A9 AA       lda #$aa
+0547  $A2E9  85 FE       sta RAMfill
+0548  $A2EB  20 EF A0    jsr fillMem           ; fill block with $aa (inverted $55)
+0549  $A2EE  20 11 A1    jsr testMem           ; test block for all $55
+0550  $A2F1              
+0551  $A2F1  A5 BF       lda TestResult        ; is TestResult = 0?
+0552  $A2F3  D0 10       bne testBlockErr      ; no? Then it is an error
+0553  $A2F5              
+0554  $A2F5  20 8D A1    jsr fillPRN           ; fill the block with a sequence of _pseudo_ random numbers
+0555  $A2F8  20 B3 A1    jsr testPRN           ; test for this sequence
+0556  $A2FB  A5 BF       lda TestResult        ; is TestResult = 0?
+0557  $A2FD  D0 06       bne testBlockErr      ; no? Then it is an error
+0558  $A2FF              
+0559  $A2FF              ; test ok
+0560  $A2FF  A5 9B       lda BitPattern        ; mark the block as ok in the
+0561  $A301  05 95       ora BlockOk           ; bitset contained in BlockOr
+0562  $A303  85 95       sta BlockOk           ; 1 = ok
+0563  $A305              
+0564  $A305  EA          testBlockErr nop                 ; no further action, yet
+0565  $A306              
+0566  $A306  60          testBlockEnd rts
+0567  $A307              
+0568  $A307              ;===================================================
+0569  $A307              ; testXlnk
+0570  $A307              ; tests all "other" blocks if they are fillZero
+0571  $A307              ; excluded block in TestBlk
+0572  $A307              ;===================================================
+0573  $A307              testXlnk
+0574  $A307  A5 BF       lda TestResult       ; save variable TestResult
+0575  $A309  48          pha
+0576  $A30A              
+0577  $A30A  A9 00       lda #$00             ; set RAMPtrL for all test
+0578  $A30C  85 FB       sta RAMPtrL
+0579  $A30E  85 96       sta XLnk             ; reset crolls link flags
+0580  $A310              
+0581  $A310              ; Block 0
+0582  $A310  A5 94       lda TestBlk          ; is block 0 excluded
+0583  $A312  F0 23       beq xlnkBlk1         ; yes: skip block 0
+0584  $A314              
+0585  $A314  A9 01       lda #%00000001       ; bit#0
+0586  $A316  25 BE       and RAMfound         ; is block 0 detected?
+0587  $A318  F0 1D       beq xlnkBlk1         ; no: skip block 0
+0588  $A31A              
+0589  $A31A  A9 00       lda #$00
+0590  $A31C  85 FE       sta RAMfill          ; test for #$00
+0591  $A31E  A9 0C       lda #12
+0592  $A320  85 FD       sta NumPages         ; 12 pages
+0593  $A322  A9 04       lda #$04             ; block start @ 0400
+0594  $A324  85 FC       sta RAMPtrH
+0595  $A326  20 11 A1    jsr testMem          ; execute test
+0596  $A329  A5 BF       lda TestResult       ; TestResult?
+0597  $A32B  F0 0A       beq xlnkBlk1         ; 0 -> passed
+0598  $A32D              ; not passed:
+0599  $A32D  A9 01       lda #%00000001       ; set bit#0
+0600  $A32F  05 96       ora XLnk             ; in
+0601  $A331  85 96       sta XLnk             ; cross link flags
+0602  $A333  05 9F       ora StickyXLnk
+0603  $A335  85 9F       sta StickyXLnk       ; set bits in sticky XLnk
+0604  $A337              
+0605  $A337  A5 94       xlnkBlk1  lda TestBlk          ; is block 1 excluded
+0606  $A339  C9 01       cmp #1
+0607  $A33B  F0 23       beq xlnkBlk2         ; yes: skip block 1
+0608  $A33D              
+0609  $A33D  A9 02       lda #$02             ; bit#1
+0610  $A33F  25 BE       and RAMfound         ; is block 1 detected?
+0611  $A341  F0 1D       beq xlnkBlk2         ; no: skip block 1
+0612  $A343              
+0613  $A343  A9 00       lda #$00
+0614  $A345  85 FE       sta RAMfill          ; test for #$00
+0615  $A347  A9 20       lda #$20
+0616  $A349  85 FD       sta NumPages         ; 32 pages
+0617  $A34B  A9 20       lda #$20             ; block start @ 2000
+0618  $A34D  85 FC       sta RAMPtrH
+0619  $A34F  20 11 A1    jsr testMem          ; execute test
+0620  $A352  A5 BF       lda TestResult       ; TestResult?
+0621  $A354  F0 0A       beq xlnkBlk2         ; 0 -> passed
+0622  $A356              ; not passed:
+0623  $A356  A9 02       lda #%00000010       ; set bit#1
+0624  $A358  05 96       ora XLnk             ; in
+0625  $A35A  85 96       sta XLnk             ; cross link flags
+0626  $A35C  05 9F       ora StickyXLnk
+0627  $A35E  85 9F       sta StickyXLnk       ; set bits in sticky XLnk
+0628  $A360              
+0629  $A360  A5 94       xlnkBlk2  lda TestBlk          ; is block 2 excluded
+0630  $A362  C9 02       cmp #2
+0631  $A364  F0 23       beq xlnkBlk3         ; yes: skip block 2
+0632  $A366              
+0633  $A366  A9 04       lda #%00000100       ; bit#2
+0634  $A368  25 BE       and RAMfound         ; is block 2 detected?
+0635  $A36A  F0 1D       beq xlnkBlk3         ; no: skip block 2
+0636  $A36C              
+0637  $A36C  A9 00       lda #$00
+0638  $A36E  85 FE       sta RAMfill          ; test for #$00
+0639  $A370  A9 20       lda #$20
+0640  $A372  85 FD       sta NumPages         ; 32 pages
+0641  $A374  A9 40       lda #$40             ; block start @ 4000
+0642  $A376  85 FC       sta RAMPtrH
+0643  $A378  20 11 A1    jsr testMem          ; execute test
+0644  $A37B  A5 BF       lda TestResult       ; TestResult?
+0645  $A37D  F0 0A       beq xlnkBlk3         ; 0 -> passed
+0646  $A37F              ; not passed:
+0647  $A37F  A9 04       lda #%00000100       ; set bit#2
+0648  $A381  05 96       ora XLnk             ; in
+0649  $A383  85 96       sta XLnk             ; cross link flags
+0650  $A385  05 9F       ora StickyXLnk
+0651  $A387  85 9F       sta StickyXLnk       ; set bits in sticky XLnk
+0652  $A389              
+0653  $A389  A5 94       xlnkBlk3  lda TestBlk          ; is block 3 excluded
+0654  $A38B  C9 03       cmp #3
+0655  $A38D  F0 23       beq xlnkBlk4         ; yes: skip block 3
+0656  $A38F              
+0657  $A38F  A9 08       lda #%00001000       ; bit#3
+0658  $A391  25 BE       and RAMfound         ; is block 3 detected?
+0659  $A393  F0 1D       beq xlnkBlk4         ; no: skip block 3
+0660  $A395              
+0661  $A395  A9 00       lda #$00
+0662  $A397  85 FE       sta RAMfill          ; test for #$00
+0663  $A399  A9 20       lda #$20
+0664  $A39B  85 FD       sta NumPages         ; 32 pages
+0665  $A39D  A9 60       lda #$60             ; block start @ 6000
+0666  $A39F  85 FC       sta RAMPtrH
+0667  $A3A1  20 11 A1    jsr testMem          ; execute test
+0668  $A3A4  A5 BF       lda TestResult       ; TestResult?
+0669  $A3A6  F0 0A       beq xlnkBlk4         ; 0 -> passed
+0670  $A3A8              ; not passed:
+0671  $A3A8  A9 08       lda #%00001000       ; set bit#3
+0672  $A3AA  05 96       ora XLnk             ; in
+0673  $A3AC  85 96       sta XLnk             ; cross link flags
+0674  $A3AE  05 9F       ora StickyXLnk
+0675  $A3B0  85 9F       sta StickyXLnk       ; set bits in sticky XLnk
+0676  $A3B2  A5 94       xlnkBlk4  lda TestBlk          ; is block 4 excluded
+0677  $A3B4  C9 04       cmp #4
+0678  $A3B6  F0 23       beq xlnkEnd          ; yes: skip block 4
+0679  $A3B8              
+0680  $A3B8  A9 10       lda #%00010000       ; bit#4
+0681  $A3BA  25 BE       and RAMfound         ; is block 4 detected?
+0682  $A3BC  F0 1D       beq xlnkEnd          ; no: skip block 4
+0683  $A3BE              
+0684  $A3BE  A9 00       lda #$00
+0685  $A3C0  85 FE       sta RAMfill          ; test for #$00
+0686  $A3C2  A9 20       lda #$20
+0687  $A3C4  85 FD       sta NumPages         ; 32 pages
+0688  $A3C6  A9 A0       lda #$a0             ; block start @ a000
+0689  $A3C8  85 FC       sta RAMPtrH
+0690  $A3CA  20 11 A1    jsr testMem          ; execute test
+0691  $A3CD  A5 BF       lda TestResult       ; TestResult?
+0692  $A3CF  F0 0A       beq xlnkEnd          ; 0 -> passed
+0693  $A3D1              ; not passed:
+0694  $A3D1  A9 10       lda #%00010000       ; set bit#4
+0695  $A3D3  05 96       ora XLnk             ; in
+0696  $A3D5  85 96       sta XLnk             ; cross link flags
+0697  $A3D7  05 9F       ora StickyXLnk
+0698  $A3D9  85 9F       sta StickyXLnk       ; set bits in sticky XLnk
+0699  $A3DB              xlnkEnd
+0700  $A3DB  68          pla                  ; restore variable TestResult
+0701  $A3DC  85 BF       sta TestResult
+0702  $A3DE  60          rts
+0703  $A3DF              
+0704  $A3DF              ;===================================================
+0705  $A3DF              ; printXlnk
+0706  $A3DF              ; prints all cross link status
+0707  $A3DF              ;===================================================
+0708  $A3DF  A9 04       printXlnk lda #$04
+0709  $A3E1  85 A3       sta index1          ; initialize index variable
+0710  $A3E3  A9 10       lda #%00010000
+0711  $A3E5  85 9B       sta BitPattern      ; initialize bit pattern
+0712  $A3E7              ; for index1...
+0713  $A3E7              printXa                       ; set cursor position
+0714  $A3E7  A9 04       lda #titlerow+1
+0715  $A3E9  18          clc
+0716  $A3EA  65 A3       adc index1
+0717  $A3EC  AA          tax
+0718  $A3ED  A0 12       ldy #crosscol
+0719  $A3EF  20 F0 FF    jsr posCursor
+0720  $A3F2              
+0721  $A3F2  A5 9B       lda BitPattern      ; get bit BitPattern
+0722  $A3F4  25 BE       and RAMfound        ; is the RAMblock detected?
+0723  $A3F6  F0 21       beq printXf         ; no -> skip
+0724  $A3F8              
+0725  $A3F8  25 9F       and StickyXLnk      ; has this block ever been bad?
+0726  $A3FA  F0 06       beq printXb         ; no
+0727  $A3FC  20 E3 A0    jsr setRed          ; former/present errors are marked red
+0728  $A3FF  4C 05 A4    jmp printXc
+0729  $A402  20 DD A0    printXb   jsr setBlue         ; no cross links: it's blue
+0730  $A405  A5 9B       printXc   lda BitPattern      ; BitPattern again
+0731  $A407  25 96       and XLnk            ; is it cross linked in this test?
+0732  $A409  F0 07       beq printXd         ; no
+0733  $A40B              ; it is cross linked
+0734  $A40B  A9 87       lda #<txtyes        ; print "YES"
+0735  $A40D  A0 A0       ldy #>txtyes
+0736  $A40F  4C 16 A4    jmp printXe
+0737  $A412              
+0738  $A412              ; not cross linked
+0739  $A412  A9 8B       printXd   lda #<txtno         ; print "NO"
+0740  $A414  A0 A0       ldy #>txtno
+0741  $A416              
+0742  $A416  20 1E CB    printXe   jsr printStr        ; now, print
+0743  $A419              
+0744  $A419  C6 A3       printXf   dec index1          ; decrement index variable
+0745  $A41B  18          clc
+0746  $A41C  A5 9B       lda BitPattern      ; load bit pattern
+0747  $A41E  6A          ror                 ; shift right
+0748  $A41F  85 9B       sta BitPattern      ; store it
+0749  $A421  D0 C4       bne printXa         ; for loop
+0750  $A423              ;End
+0751  $A423  60          rts
+0752  $A424              
+0753  $A424              
+0754  $A424              ; ==== main ====
+0755  $A424  A9 00       main       lda #$00               ;reset test flags
+0756  $A426  85 96       sta XLnk
+0757  $A428  85 95       sta BlockOk
+0758  $A42A  85 9E       sta StickyBad
+0759  $A42C  85 9F       sta StickyXLnk
+0760  $A42E  85 92       sta Result
+0761  $A430  85 3B       sta CountL             ; set CountL/H to 0
+0762  $A432  85 3C       sta CountH
+0763  $A434              
+0764  $A434  20 5F E5    jsr clearScreen        ; clear screen and print table
+0765  $A437  20 E9 A0    jsr setBlk             ; black cursor
+0766  $A43A              
+0767  $A43A  A2 00       ldx #0                 ; print program title
+0768  $A43C  A0 01       ldy #1
+0769  $A43E  18          clc
+0770  $A43F  20 F0 FF    jsr posCursor
+0771  $A442  A9 19       lda #<title
+0772  $A444  A0 A0       ldy #>title
+0773  $A446  20 1E CB    jsr printStr
+0774  $A449  A2 01       ldx #1                 ; print program title
+0775  $A44B  A0 06       ldy #6
+0776  $A44D  18          clc
+0777  $A44E  20 F0 FF    jsr posCursor
+0778  $A451  A9 2E       lda #<title1
+0779  $A453  A0 A0       ldy #>title1
+0780  $A455  20 1E CB    jsr printStr
+0781  $A458              
+0782  $A458              ;==== print table
+0783  $A458              ; print table title
+0784  $A458  A2 03       ldx #titlerow
+0785  $A45A  A0 00       ldy #0
+0786  $A45C  18          clc
+0787  $A45D  20 F0 FF    jsr posCursor
+0788  $A460  A9 58       lda #<tabtitle
+0789  $A462  A0 A0       ldy #>tabtitle
+0790  $A464  20 1E CB    jsr printStr
+0791  $A467              ; print ram block text
+0792  $A467  A2 04       ldx #titlerow+1
+0793  $A469  A0 00       ldy #0
+0794  $A46B  18          clc
+0795  $A46C  20 F0 FF    jsr posCursor
+0796  $A46F  A9 38       lda #<exp3k
+0797  $A471  A0 A0       ldy #>exp3k
+0798  $A473  20 1E CB    jsr printStr
+0799  $A476              ; print blk1 text
+0800  $A476  A2 05       ldx #titlerow+2
+0801  $A478  A0 00       ldy #0
+0802  $A47A  18          clc
+0803  $A47B  20 F0 FF    jsr posCursor
+0804  $A47E  A9 40       lda #<expblk1
+0805  $A480  A0 A0       ldy #>expblk1
+0806  $A482  20 1E CB    jsr printStr
+0807  $A485              ; print blk2 text
+0808  $A485  A2 06       ldx #titlerow+3
+0809  $A487  A0 00       ldy #0
+0810  $A489  18          clc
+0811  $A48A  20 F0 FF    jsr posCursor
+0812  $A48D  A9 48       lda #<expblk2
+0813  $A48F  A0 A0       ldy #>expblk2
+0814  $A491  20 1E CB    jsr printStr
+0815  $A494              
+0816  $A494              ; print blk3 text
+0817  $A494  A2 07       ldx #titlerow+4
+0818  $A496  A0 00       ldy #0
+0819  $A498  18          clc
+0820  $A499  20 F0 FF    jsr posCursor
+0821  $A49C  A9 50       lda #<expblk3
+0822  $A49E  A0 A0       ldy #>expblk3
+0823  $A4A0  20 1E CB    jsr printStr
+0824  $A4A3              
+0825  $A4A3              !ifdef RAM {
+0826  $A4A3              ; print blk5 text
+0827  $A4A3              ldx #titlerow+5
+0828  $A4A3              ldy #0
+0829  $A4A3              clc
+0830  $A4A3              jsr posCursor
+0831  $A4A3              lda #<expblk5
+0832  $A4A3              ldy #>expblk5
+0833  $A4A3              jsr printStr
+0834  $A4A3              }
+0835  $A4A3              ; print count text
+0836  $A4A3  A2 0B       ldx #countrow
+0837  $A4A5  A0 00       ldy #0
+0838  $A4A7  18          clc
+0839  $A4A8  20 F0 FF    jsr posCursor
+0840  $A4AB  A9 6F       lda #<counttxt
+0841  $A4AD  A0 A0       ldy #>counttxt
+0842  $A4AF  20 1E CB    jsr printStr
+0843  $A4B2              ; print result text
+0844  $A4B2  A2 0C       ldx #resultrow
+0845  $A4B4  A0 00       ldy #0
+0846  $A4B6  18          clc
+0847  $A4B7  20 F0 FF    jsr posCursor
+0848  $A4BA  A9 77       lda #<resulttxt
+0849  $A4BC  A0 A0       ldy #>resulttxt
+0850  $A4BE  20 1E CB    jsr printStr
+0851  $A4C1              
+0852  $A4C1  A2 0E       ldx #countrow+3        ; print legend line 1
+0853  $A4C3  A0 00       ldy #0
+0854  $A4C5  18          clc
+0855  $A4C6  20 F0 FF    jsr posCursor
+0856  $A4C9  A9 93       lda #<txtleg1
+0857  $A4CB  A0 A0       ldy #>txtleg1
+0858  $A4CD  20 1E CB    jsr printStr
+0859  $A4D0              
+0860  $A4D0  A2 10       ldx #countrow+5        ; print legend line 2
+0861  $A4D2  A0 00       ldy #0
+0862  $A4D4  18          clc
+0863  $A4D5  20 F0 FF    jsr posCursor
+0864  $A4D8  A9 AA       lda #<txtleg2
+0865  $A4DA  A0 A0       ldy #>txtleg2
+0866  $A4DC  20 1E CB    jsr printStr
+0867  $A4DF              
+0868  $A4DF  A2 11       ldx #countrow+6        ; print legend line 3
+0869  $A4E1  A0 00       ldy #0
+0870  $A4E3  18          clc
+0871  $A4E4  20 F0 FF    jsr posCursor
+0872  $A4E7  A9 C1       lda #<txtleg3
+0873  $A4E9  A0 A0       ldy #>txtleg3
+0874  $A4EB  20 1E CB    jsr printStr
+0875  $A4EE              
+0876  $A4EE              ; detect RAM blocks
+0877  $A4EE  A9 00       lda #0                ; reset the variable, that holds the found RAM blocks
+0878  $A4F0  85 BE       sta RAMfound
+0879  $A4F2              
+0880  $A4F2  A9 00       lda #0                ; detect 3k@0400
+0881  $A4F4  85 94       sta TestBlk
+0882  $A4F6  20 E7 A1    jsr detectBlock       ; detect RAM
+0883  $A4F9              
+0884  $A4F9  A2 04       ldx #titlerow+1       ; position cursor (3k)
+0885  $A4FB  A0 08       ldy #foundcol
+0886  $A4FD  18          clc
+0887  $A4FE  20 F0 FF    jsr posCursor
+0888  $A501              
+0889  $A501  A5 BF       lda TestResult        ; TestResult != 0 => RAM not found
+0890  $A503  D0 0A       bne RAMsrch1
+0891  $A505              
+0892  $A505  20 DD A0    jsr setBlue           ; blue
+0893  $A508  A9 87       lda #<txtyes          ; RAM detected: print "yes"
+0894  $A50A  A0 A0       ldy #>txtyes
+0895  $A50C  4C 16 A5    jmp RAMsrch2
+0896  $A50F              
+0897  $A50F  20 E3 A0    RAMsrch1   jsr setRed
+0898  $A512  A9 8B       lda #<txtno           ; RAM not detected => print "no"
+0899  $A514  A0 A0       ldy #>txtno
+0900  $A516              
+0901  $A516  20 1E CB    RAMsrch2   jsr printStr
+0902  $A519              
+0903  $A519  A9 01       lda #1                ; detect 8k@2000
+0904  $A51B  85 94       sta TestBlk
+0905  $A51D  20 E7 A1    jsr detectBlock       ; detect RAM
+0906  $A520              
+0907  $A520  A2 05       ldx #titlerow+2       ; position cursor ($2000)
+0908  $A522  A0 08       ldy #foundcol
+0909  $A524  18          clc
+0910  $A525  20 F0 FF    jsr posCursor
+0911  $A528              
+0912  $A528  A5 BF       lda TestResult
+0913  $A52A  D0 0A       bne RAMsrch3          ; TestResult != 0 => RAM not found
+0914  $A52C              
+0915  $A52C  20 DD A0    jsr setBlue
+0916  $A52F  A9 87       lda #<txtyes          ; RAM detected: print "yes"
+0917  $A531  A0 A0       ldy #>txtyes
+0918  $A533  4C 3D A5    jmp RAMsrch4
+0919  $A536              
+0920  $A536  20 E3 A0    RAMsrch3   jsr setRed
+0921  $A539  A9 8B       lda #<txtno           ; RAM not detected => print "no"
+0922  $A53B  A0 A0       ldy #>txtno
+0923  $A53D              
+0924  $A53D  20 1E CB    RAMsrch4   jsr printStr
+0925  $A540              
+0926  $A540  A9 02       lda #2                ; detect 8k@4000
+0927  $A542  85 94       sta TestBlk
+0928  $A544  20 E7 A1    jsr detectBlock       ; detect RAM
+0929  $A547              
+0930  $A547  A2 06       ldx #titlerow+3       ; position cursor ($4000)
+0931  $A549  A0 08       ldy #foundcol
+0932  $A54B  18          clc
+0933  $A54C  20 F0 FF    jsr posCursor
+0934  $A54F              
+0935  $A54F  A5 BF       lda TestResult        ; TestResult != 0 => RAM not found
+0936  $A551  D0 0A       bne RAMsrch5
+0937  $A553              
+0938  $A553  20 DD A0    jsr setBlue
+0939  $A556  A9 87       lda #<txtyes          ; RAM detected: print "yes"
+0940  $A558  A0 A0       ldy #>txtyes
+0941  $A55A  4C 64 A5    jmp RAMsrch6
+0942  $A55D              
+0943  $A55D  20 E3 A0    RAMsrch5   jsr setRed
+0944  $A560  A9 8B       lda #<txtno           ; RAM not detected => print "no"
+0945  $A562  A0 A0       ldy #>txtno
+0946  $A564              
+0947  $A564              
+0948  $A564  20 1E CB    RAMsrch6   jsr printStr
+0949  $A567              
+0950  $A567  A9 03       lda #3                ; detect 8k@6000
+0951  $A569  85 94       sta TestBlk
+0952  $A56B  20 E7 A1    jsr detectBlock       ; detect RAM
+0953  $A56E              
+0954  $A56E  A2 07       ldx #titlerow+4       ; position cursor ($6000)
+0955  $A570  A0 08       ldy #foundcol
+0956  $A572  18          clc
+0957  $A573  20 F0 FF    jsr posCursor
+0958  $A576              
+0959  $A576  A5 BF       lda TestResult        ; TestResult != 0 => RAM not found
+0960  $A578  D0 0A       bne RAMsrch7
+0961  $A57A              
+0962  $A57A  20 DD A0    jsr setBlue
+0963  $A57D  A9 87       lda #<txtyes          ; RAM detected: print "yes"
+0964  $A57F  A0 A0       ldy #>txtyes
+0965  $A581  4C 8B A5    jmp RAMsrch8
+0966  $A584              
+0967  $A584  20 E3 A0    RAMsrch7   jsr setRed
+0968  $A587  A9 8B       lda #<txtno           ; RAM not detected => print "no"
+0969  $A589  A0 A0       ldy #>txtno
+0970  $A58B              
+0971  $A58B  20 1E CB    RAMsrch8   jsr printStr
+0972  $A58E              !ifdef RAM {
+0973  $A58E              
+0974  $A58E              lda #4                ; detect 8k@A000
+0975  $A58E              sta TestBlk
+0976  $A58E              jsr detectBlock       ; detect RAM
+0977  $A58E              
+0978  $A58E              ldx #titlerow+5       ; position cursor ($A000)
+0979  $A58E              ldy #foundcol
+0980  $A58E              clc
+0981  $A58E              jsr posCursor
+0982  $A58E              
+0983  $A58E              lda TestResult        ; TestResult != 0 => RAM not found
+0984  $A58E              bne RAMsrch9
+0985  $A58E              
+0986  $A58E              jsr setBlue           ; blue
+0987  $A58E              lda #<txtyes          ; RAM detected: print "yes"
+0988  $A58E              ldy #>txtyes
+0989  $A58E              jmp RAMsrch10
+0990  $A58E              
+0991  $A58E              RAMsrch9   jsr setRed
+0992  $A58E              lda #<txtno           ; RAM not detected => print "no"
+0993  $A58E              ldy #>txtno
+0994  $A58E              RAMsrch10   jsr printStr
+0995  $A58E              }
+0996  $A58E              ; ====
+0997  $A58E              ; here, everything was searched and printed
+0998  $A58E              
+0999  $A58E              ; ==== let the test begin!
+1000  $A58E  20 3E A1    test       jsr fillZero          ; fill all RAM with zero
+1001  $A591              
+1002  $A591  A9 01       lda #%00000001        ; bit#0 for testing RAMfound
+1003  $A593  25 BE       and RAMfound
+1004  $A595  F0 51       beq testblk1          ; block 0 is not present. Skip!
+1005  $A597              ; Block 0 found
+1006  $A597  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1007  $A599  A2 04       ldx #titlerow+1
+1008  $A59B  18          clc
+1009  $A59C  20 F0 FF    jsr posCursor
+1010  $A59F  20 E9 A0    jsr setBlk            ; set color black
+1011  $A5A2              
+1012  $A5A2  A9 8F       lda #<txtrun
+1013  $A5A4  A0 A0       ldy #>txtrun
+1014  $A5A6  20 1E CB    jsr printStr          ; print "RUN"
+1015  $A5A9              
+1016  $A5A9  A9 00       lda #$00
+1017  $A5AB  85 94       sta TestBlk
+1018  $A5AD  20 69 A2    jsr testBlock         ; test block 0
+1019  $A5B0              
+1020  $A5B0  20 07 A3    jsr testXlnk          ; test other block for corruption/cross linked
+1021  $A5B3              
+1022  $A5B3              
+1023  $A5B3  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1024  $A5B5  A2 04       ldx #titlerow+1
+1025  $A5B7  18          clc
+1026  $A5B8  20 F0 FF    jsr posCursor
+1027  $A5BB              
+1028  $A5BB  A5 BF       lda TestResult        ; if TestResult
+1029  $A5BD  F0 10       beq testblk0a         ; is 0 -> passed
+1030  $A5BF              
+1031  $A5BF              ; not passed:
+1032  $A5BF  A9 01       lda #%00000001
+1033  $A5C1  05 9E       ora StickyBad
+1034  $A5C3  85 9E       sta StickyBad         ; set bit in StickyBad
+1035  $A5C5              
+1036  $A5C5  20 E3 A0    jsr setRed            ; errors are red
+1037  $A5C8  A9 83       lda #<txtbad          ; set pointer to "BAD"
+1038  $A5CA  A0 A0       ldy #>txtbad
+1039  $A5CC  4C E2 A5    jmp testblk0d
+1040  $A5CF              
+1041  $A5CF              ; passed
+1042  $A5CF  A9 01       testblk0a  lda #%00000001        ; test bit in StickyBad
+1043  $A5D1  25 9E       and StickyBad
+1044  $A5D3  F0 06       beq testblk0b
+1045  $A5D5  20 E3 A0    jsr setRed            ; former errors (sticky!) are red
+1046  $A5D8  4C DE A5    jmp testblk0c
+1047  $A5DB              
+1048  $A5DB  20 DD A0    testblk0b  jsr setBlue           ; ok is blue in case always ok
+1049  $A5DE  A9 7F       testblk0c  lda #<txtok           ; set pointer to "OK"
+1050  $A5E0  A0 A0       ldy #>txtok
+1051  $A5E2  20 1E CB    testblk0d  jsr printStr          ; print the result in table
+1052  $A5E5              
+1053  $A5E5  20 DF A3    jsr printXlnk         ; print all cross linked results
+1054  $A5E8              
+1055  $A5E8  20 3E A1    testblk1   jsr fillZero          ; fill all RAM with zero
+1056  $A5EB              
+1057  $A5EB  A9 02       lda #%00000010        ; bit#2 for testing RAMfound
+1058  $A5ED  25 BE       and RAMfound
+1059  $A5EF  F0 51       beq testblk2          ; block 1 is not present. Skip!
+1060  $A5F1              ; Block 1 found
+1061  $A5F1  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1062  $A5F3  A2 05       ldx #titlerow+2
+1063  $A5F5  18          clc
+1064  $A5F6  20 F0 FF    jsr posCursor
+1065  $A5F9  20 E9 A0    jsr setBlk            ; set color black
+1066  $A5FC              
+1067  $A5FC  A9 8F       lda #<txtrun
+1068  $A5FE  A0 A0       ldy #>txtrun
+1069  $A600  20 1E CB    jsr printStr          ; print "RUN"
+1070  $A603              
+1071  $A603  A9 01       lda #$01
+1072  $A605  85 94       sta TestBlk
+1073  $A607  20 69 A2    jsr testBlock         ; test block 1
+1074  $A60A              
+1075  $A60A  20 07 A3    jsr testXlnk          ; test other block for corruption/cross linked
+1076  $A60D              
+1077  $A60D  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1078  $A60F  A2 05       ldx #titlerow+2
+1079  $A611  18          clc
+1080  $A612  20 F0 FF    jsr posCursor
+1081  $A615              
+1082  $A615  A5 BF       lda TestResult        ; if TestResult
+1083  $A617  F0 10       beq testblk1a         ; is 0 -> passed
+1084  $A619              
+1085  $A619              ; not passed:
+1086  $A619  A9 02       lda #%00000010
+1087  $A61B  05 9E       ora StickyBad
+1088  $A61D  85 9E       sta StickyBad         ; set bit in StickyBad
+1089  $A61F              
+1090  $A61F  20 E3 A0    jsr setRed            ; errors are red
+1091  $A622  A9 83       lda #<txtbad          ; set pointer to "BAD"
+1092  $A624  A0 A0       ldy #>txtbad
+1093  $A626  4C 3C A6    jmp testblk1d
+1094  $A629              
+1095  $A629              ; passed
+1096  $A629  A9 02       testblk1a  lda #%00000010        ; test bit in StickyBad
+1097  $A62B  25 9E       and StickyBad
+1098  $A62D  F0 06       beq testblk1b
+1099  $A62F  20 E3 A0    jsr setRed            ; former errors (sticky!) are red
+1100  $A632  4C 38 A6    jmp testblk1c
+1101  $A635              
+1102  $A635  20 DD A0    testblk1b  jsr setBlue           ; ok is blue in case always ok
+1103  $A638  A9 7F       testblk1c  lda #<txtok           ; set pointer to "OK"
+1104  $A63A  A0 A0       ldy #>txtok
+1105  $A63C  20 1E CB    testblk1d  jsr printStr          ; print the result in table
+1106  $A63F              
+1107  $A63F  20 DF A3    jsr printXlnk         ; print all cross linked results
+1108  $A642              
+1109  $A642  20 3E A1    testblk2   jsr fillZero          ; fill all RAM with zero
+1110  $A645              
+1111  $A645  A9 04       lda #%00000100        ; bit#2 for testing RAMfound
+1112  $A647  25 BE       and RAMfound
+1113  $A649  F0 51       beq testblk3          ; block 2 is not present. Skip!
+1114  $A64B              ; Block 2 found
+1115  $A64B  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1116  $A64D  A2 06       ldx #titlerow+3
+1117  $A64F  18          clc
+1118  $A650  20 F0 FF    jsr posCursor
+1119  $A653  20 E9 A0    jsr setBlk            ; set color black
+1120  $A656              
+1121  $A656  A9 8F       lda #<txtrun
+1122  $A658  A0 A0       ldy #>txtrun
+1123  $A65A  20 1E CB    jsr printStr          ; print "RUN"
+1124  $A65D              
+1125  $A65D  A9 02       lda #$02
+1126  $A65F  85 94       sta TestBlk
+1127  $A661  20 69 A2    jsr testBlock         ; test block 2
+1128  $A664              
+1129  $A664  20 07 A3    jsr testXlnk          ; test other block for corruption/cross linked
+1130  $A667              
+1131  $A667  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1132  $A669  A2 06       ldx #titlerow+3
+1133  $A66B  18          clc
+1134  $A66C  20 F0 FF    jsr posCursor
+1135  $A66F              
+1136  $A66F  A5 BF       lda TestResult        ; if TestResult
+1137  $A671  F0 10       beq testblk2a         ; is 0 -> passed
+1138  $A673              
+1139  $A673              ; not passed:
+1140  $A673  A9 04       lda #%00000100
+1141  $A675  05 9E       ora StickyBad
+1142  $A677  85 9E       sta StickyBad         ; set bit in StickyBad
+1143  $A679              
+1144  $A679  20 E3 A0    jsr setRed            ; errors are red
+1145  $A67C  A9 83       lda #<txtbad          ; set pointer to "BAD"
+1146  $A67E  A0 A0       ldy #>txtbad
+1147  $A680  4C 96 A6    jmp testblk2d
+1148  $A683              
+1149  $A683              ; passed
+1150  $A683  A9 04       testblk2a  lda #%00000100        ; test bit in StickyBad
+1151  $A685  25 9E       and StickyBad
+1152  $A687  F0 06       beq testblk2b
+1153  $A689  20 E3 A0    jsr setRed            ; former errors (sticky!) are red
+1154  $A68C  4C 92 A6    jmp testblk2c
+1155  $A68F              
+1156  $A68F  20 DD A0    testblk2b  jsr setBlue           ; ok is blue in case always ok
+1157  $A692  A9 7F       testblk2c  lda #<txtok           ; set pointer to "OK"
+1158  $A694  A0 A0       ldy #>txtok
+1159  $A696  20 1E CB    testblk2d  jsr printStr          ; print the result in table
+1160  $A699              
+1161  $A699  20 DF A3    jsr printXlnk         ; print all cross linked results
+1162  $A69C              
+1163  $A69C  20 3E A1    testblk3   jsr fillZero          ; fill all RAM with zero
+1164  $A69F              
+1165  $A69F  A9 08       lda #%00001000        ; bit#2 for testing RAMfound
+1166  $A6A1  25 BE       and RAMfound
+1167  $A6A3  F0 51       beq testblk4          ; block 3 is not present. Skip!
+1168  $A6A5              ; Block 3 found
+1169  $A6A5  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1170  $A6A7  A2 07       ldx #titlerow+4
+1171  $A6A9  18          clc
+1172  $A6AA  20 F0 FF    jsr posCursor
+1173  $A6AD  20 E9 A0    jsr setBlk            ; set color black
+1174  $A6B0              
+1175  $A6B0  A9 8F       lda #<txtrun
+1176  $A6B2  A0 A0       ldy #>txtrun
+1177  $A6B4  20 1E CB    jsr printStr          ; print "RUN"
+1178  $A6B7              
+1179  $A6B7  A9 03       lda #$03
+1180  $A6B9  85 94       sta TestBlk
+1181  $A6BB  20 69 A2    jsr testBlock         ; test block 3
+1182  $A6BE              
+1183  $A6BE  20 07 A3    jsr testXlnk          ; test other block for corruption/cross linked
+1184  $A6C1              
+1185  $A6C1  A0 0C       ldy #testcol          ; position cursor in table (test column)
+1186  $A6C3  A2 07       ldx #titlerow+4
+1187  $A6C5  18          clc
+1188  $A6C6  20 F0 FF    jsr posCursor
+1189  $A6C9              
+1190  $A6C9  A5 BF       lda TestResult        ; if TestResult
+1191  $A6CB  F0 10       beq testblk3a         ; is 0 -> passed
+1192  $A6CD              
+1193  $A6CD              ; not passed:
+1194  $A6CD  A9 08       lda #%00001000
+1195  $A6CF  05 9E       ora StickyBad
+1196  $A6D1  85 9E       sta StickyBad         ; set bit in StickyBad
+1197  $A6D3              
+1198  $A6D3  20 E3 A0    jsr setRed            ; errors are red
+1199  $A6D6  A9 83       lda #<txtbad          ; set pointer to "BAD"
+1200  $A6D8  A0 A0       ldy #>txtbad
+1201  $A6DA  4C F0 A6    jmp testblk3d
+1202  $A6DD              
+1203  $A6DD              ; passed
+1204  $A6DD  A9 08       testblk3a  lda #%00001000        ; test bit in StickyBad
+1205  $A6DF  25 9E       and StickyBad
+1206  $A6E1  F0 06       beq testblk3b
+1207  $A6E3  20 E3 A0    jsr setRed            ; former errors (sticky!) are red
+1208  $A6E6  4C EC A6    jmp testblk3c
+1209  $A6E9              
+1210  $A6E9  20 DD A0    testblk3b  jsr setBlue           ; ok is blue in case always ok
+1211  $A6EC  A9 7F       testblk3c  lda #<txtok           ; set pointer to "OK"
+1212  $A6EE  A0 A0       ldy #>txtok
+1213  $A6F0  20 1E CB    testblk3d  jsr printStr          ; print the result in table
+1214  $A6F3              
+1215  $A6F3  20 DF A3    jsr printXlnk         ; print all cross linked results
+1216  $A6F6              testblk4
+1217  $A6F6              !ifdef RAM {
+1218  $A6F6              jsr fillZero
+1219  $A6F6              lda #%00010000        ; bit#4 for testing RAMfound
+1220  $A6F6              and RAMfound
+1221  $A6F6              beq testcount         ; block 4 is not present. Skip!
+1222  $A6F6              ; Block 4 found
+1223  $A6F6              ldy #testcol          ; position cursor in table (test column)
+1224  $A6F6              ldx #titlerow+5
+1225  $A6F6              clc
+1226  $A6F6              jsr posCursor
+1227  $A6F6              jsr setBlk            ; set color black
+1228  $A6F6              
+1229  $A6F6              lda #<txtrun
+1230  $A6F6              ldy #>txtrun
+1231  $A6F6              jsr printStr          ; print "RUN"
+1232  $A6F6              
+1233  $A6F6              lda #$04
+1234  $A6F6              sta TestBlk
+1235  $A6F6              jsr testBlock         ; test block 4
+1236  $A6F6              
+1237  $A6F6              jsr testXlnk          ; test other block for corruption/cross linked
+1238  $A6F6              
+1239  $A6F6              ldy #testcol          ; position cursor in table (test column)
+1240  $A6F6              ldx #titlerow+5
+1241  $A6F6              clc
+1242  $A6F6              jsr posCursor
+1243  $A6F6              
+1244  $A6F6              lda TestResult        ; if TestResult
+1245  $A6F6              beq testblk4a         ; is 0 -> passed
+1246  $A6F6              
+1247  $A6F6              ; not passed:
+1248  $A6F6              lda #%00010000
+1249  $A6F6              ora StickyBad
+1250  $A6F6              sta StickyBad         ; set bit in StickyBad
+1251  $A6F6              
+1252  $A6F6              jsr setRed            ; errors are red
+1253  $A6F6              lda #<txtbad          ; set pointer to "BAD"
+1254  $A6F6              ldy #>txtbad
+1255  $A6F6              jmp testblk4d
+1256  $A6F6              
+1257  $A6F6              ; passed
+1258  $A6F6              testblk4a  lda #%00010000        ; test bit in StickyBad
+1259  $A6F6              and StickyBad
+1260  $A6F6              beq testblk4b
+1261  $A6F6              jsr setRed            ; former errors (sticky!) are red
+1262  $A6F6              jmp testblk4c
+1263  $A6F6              
+1264  $A6F6              testblk4b  jsr setBlue           ; ok is blue in case always ok
+1265  $A6F6              testblk4c  lda #<txtok           ; set pointer to "OK"
+1266  $A6F6              ldy #>txtok
+1267  $A6F6              testblk4d  jsr printStr          ; print the result in table
+1268  $A6F6              
+1269  $A6F6              jsr printXlnk         ; print all cross linked results
+1270  $A6F6              }
+1271  $A6F6              
+1272  $A6F6              testcount
+1273  $A6F6              
+1274  $A6F6              ; increment count
+1275  $A6F6  A0 07       ldy #countcol         ; position cursor in table (test column)
+1276  $A6F8  A2 0B       ldx #countrow         ; and row of count
+1277  $A6FA  18          clc
+1278  $A6FB  20 F0 FF    jsr posCursor
+1279  $A6FE  20 E9 A0    jsr setBlk            ; black color
+1280  $A701              
+1281  $A701  18          clc                   ; increment the counter
+1282  $A702  A9 01       lda #1
+1283  $A704  65 3B       adc CountL            ; lsb
+1284  $A706  85 3B       sta CountL
+1285  $A708  A9 00       lda #0
+1286  $A70A  65 3C       adc CountH            ; msb
+1287  $A70C  85 3C       sta CountH
+1288  $A70E              
+1289  $A70E  A6 3B       ldx CountL            ; MSB is in .A, LSB -> .X
+1290  $A710  20 CD DD    jsr PrtFix            ; print as decimal number
+1291  $A713              
+1292  $A713  A9 D8       lda #<txttrail        ; set pointer to trailing spaces
+1293  $A715  A0 A0       ldy #>txttrail
+1294  $A717  20 1E CB    jsr printStr          ; print the trailing spaces (in case of overflow)
+1295  $A71A              
+1296  $A71A  A5 92       lda Result
+1297  $A71C  05 9E       ora StickyBad
+1298  $A71E  05 9F       ora StickyXLnk
+1299  $A720  85 92       sta Result
+1300  $A722              
+1301  $A722  A0 07       ldy #countcol         ; position cursor in table (count column)
+1302  $A724  A2 0C       ldx #resultrow        ; and row of result
+1303  $A726  18          clc
+1304  $A727  20 F0 FF    jsr posCursor
+1305  $A72A              
+1306  $A72A  A5 92       lda Result
+1307  $A72C  D0 0D       bne RAMbad
+1308  $A72E              
+1309  $A72E  20 DD A0    jsr setBlue
+1310  $A731  A9 7F       lda #<txtok           ; set pointer to "OK"
+1311  $A733  A0 A0       ldy #>txtok
+1312  $A735  20 1E CB    jsr printStr          ; print ok
+1313  $A738  4C 45 A7    jmp testend
+1314  $A73B              RAMbad
+1315  $A73B  20 E3 A0    jsr setRed
+1316  $A73E  A9 83       lda #<txtbad           ; set pointer to "BAD"
+1317  $A740  A0 A0       ldy #>txtbad
+1318  $A742  20 1E CB    jsr printStr          ; print bad
+1319  $A745              testend
+1320  $A745  4C 8E A5    jmp test
+1321  $A748              
+1322  $A748              ;end        rts
+1323  $A748              
