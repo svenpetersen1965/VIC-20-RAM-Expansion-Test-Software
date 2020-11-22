@@ -6,3 +6,4 @@ This software tests every RAM expansion block connected to the RAM1..3 Chip sele
 
 There are two versions, a *.d64 disk image and a BIN-file, which can be programmed into an EPROM cartridge for the VIC-20, such as the <a href="https://github.com/svenpetersen1965/Commodore-VIC-20-Super-Expander-II">Super Expander II</a> or the Hyper Expander.
 
+These executable files can be found in a <a href="https://github.com/svenpetersen1965/VIC-20-RAM-Expansion-Test-Software/tree/main/Rev.%200.0/bin">/bin</a> subdirectiory
